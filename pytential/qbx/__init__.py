@@ -94,6 +94,7 @@ class QBXLayerPotentialSource(LayerPotentialSourceBase):
             geometry_data_inspector=None,
             cost_model=None,
             fmm_backend="sumpy",
+            use_fft=False,
             target_stick_out_factor=_not_provided):
         """
         :arg fine_order: The total degree to which the (upsampled)
@@ -120,6 +121,8 @@ class QBXLayerPotentialSource(LayerPotentialSourceBase):
         :arg cost_model: Either *None* or instance of
              :class:`~pytential.qbx.cost.CostModel`, used for gathering modeled
              costs (experimental)
+        :arg use_fft: A boolean to choose whether an FFT is used for multipole
+             to local translation. Used only when fmm_backend is sumpy.
         """
 
         # {{{ argument processing
@@ -200,6 +203,7 @@ class QBXLayerPotentialSource(LayerPotentialSourceBase):
 
         self.target_association_tolerance = target_association_tolerance
         self.fmm_backend = fmm_backend
+        self.use_fft = use_fft
 
         # Default values are lazily provided if these are None
         self._to_refined_connection = to_refined_connection
@@ -255,6 +259,7 @@ class QBXLayerPotentialSource(LayerPotentialSourceBase):
             geometry_data_inspector=None,
             cost_model=_not_provided,
             fmm_backend=None,
+            use_fft=None,
 
             debug=_not_provided,
             _refined_for_global_qbx=_not_provided,
@@ -348,6 +353,7 @@ class QBXLayerPotentialSource(LayerPotentialSourceBase):
                     if cost_model is not _not_provided
                     else self.cost_model),
                 fmm_backend=fmm_backend or self.fmm_backend,
+                use_fft=use_fft or self.use_fft,
                 **kwargs)
 
     # }}}
@@ -635,7 +641,7 @@ class QBXLayerPotentialSource(LayerPotentialSourceBase):
             return QBXSumpyExpansionWranglerCodeContainer(
                     self.cl_context,
                     fmm_mpole_factory, fmm_local_factory, qbx_local_factory,
-                    out_kernels)
+                    out_kernels, use_fft=self.use_fft)
 
         elif self.fmm_backend == "fmmlib":
             from pytential.qbx.fmmlib import \
@@ -712,14 +718,22 @@ class QBXLayerPotentialSource(LayerPotentialSourceBase):
                     queue, out_kernels, geo_data.tree().user_source_ids,
                     insn.kernel_arguments, evaluate))
 
+        get_wrangler_args = dict(
+            queue=queue,
+            geo_data=geo_data,
+            dtype=output_and_expansion_dtype,
+            qbx_order=self.qbx_order,
+            fmm_level_to_order=self.fmm_level_to_order,
+            source_extra_kwargs=source_extra_kwargs,
+            kernel_extra_kwargs=kernel_extra_kwargs,
+            _use_target_specific_qbx=self._use_target_specific_qbx
+        )
+
+        if self.fmm_backend == "sumpy":
+            get_wrangler_args["use_fft"] = self.use_fft
+
         wrangler = self.expansion_wrangler_code_container(
-                fmm_kernel, out_kernels).get_wrangler(
-                        queue, geo_data, output_and_expansion_dtype,
-                        self.qbx_order,
-                        self.fmm_level_to_order,
-                        source_extra_kwargs=source_extra_kwargs,
-                        kernel_extra_kwargs=kernel_extra_kwargs,
-                        _use_target_specific_qbx=self._use_target_specific_qbx)
+                fmm_kernel, out_kernels).get_wrangler(**get_wrangler_args)
 
         from pytential.qbx.geometry import target_state
         if (geo_data.user_target_to_center().with_queue(queue)

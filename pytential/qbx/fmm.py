@@ -28,7 +28,8 @@ import numpy as np  # noqa
 import pyopencl as cl  # noqa
 import pyopencl.array  # noqa
 from sumpy.fmm import (SumpyExpansionWranglerCodeContainer,
-        SumpyExpansionWrangler, level_to_rscale, SumpyTimingFuture)
+        SumpyExpansionWrangler, SumpyExpansionWithFFTWrangler,
+        level_to_rscale, SumpyTimingFuture)
 
 from pytools import memoize_method
 from pytential.qbx.interactions import P2QBXLFromCSR, M2QBXL, L2QBXL, QBXL2P
@@ -45,6 +46,8 @@ __doc__ = """
 
 .. autoclass:: QBXExpansionWrangler
 
+.. autoclass:: QBXExpansionWithFFTWrangler
+
 .. autofunction:: drive_fmm
 """
 
@@ -54,10 +57,10 @@ __doc__ = """
 class QBXSumpyExpansionWranglerCodeContainer(SumpyExpansionWranglerCodeContainer):
     def __init__(self, cl_context,
             multipole_expansion_factory, local_expansion_factory,
-            qbx_local_expansion_factory, out_kernels):
+            qbx_local_expansion_factory, out_kernels, use_fft=False):
         SumpyExpansionWranglerCodeContainer.__init__(self,
                 cl_context, multipole_expansion_factory, local_expansion_factory,
-                out_kernels)
+                out_kernels, use_fft=use_fft)
 
         self.qbx_local_expansion_factory = qbx_local_expansion_factory
 
@@ -92,8 +95,16 @@ class QBXSumpyExpansionWranglerCodeContainer(SumpyExpansionWranglerCodeContainer
             qbx_order, fmm_level_to_order,
             source_extra_kwargs={},
             kernel_extra_kwargs=None,
-            _use_target_specific_qbx=False):
-        return QBXExpansionWrangler(self, queue, geo_data,
+            _use_target_specific_qbx=False, use_fft=False):
+        if not use_fft:
+            return QBXExpansionWrangler(self, queue, geo_data,
+                dtype,
+                qbx_order, fmm_level_to_order,
+                source_extra_kwargs,
+                kernel_extra_kwargs,
+                _use_target_specific_qbx)
+        else:
+            return QBXExpansionWithFFTWrangler(self, queue, geo_data,
                 dtype,
                 qbx_order, fmm_level_to_order,
                 source_extra_kwargs,
@@ -127,9 +138,16 @@ QBXFMMGeometryData.non_qbx_box_target_lists`),
         if _use_target_specific_qbx:
             raise ValueError("TSQBX is not implemented in sumpy")
 
+        from sumpy.fmm import SumpyTranslationClassesData
+
         SumpyExpansionWrangler.__init__(self,
                 code_container, queue, geo_data.tree(),
-                dtype, fmm_level_to_order, source_extra_kwargs, kernel_extra_kwargs)
+                dtype, fmm_level_to_order, source_extra_kwargs,
+                kernel_extra_kwargs,
+                translation_classes_data=(
+                    SumpyTranslationClassesData(queue, geo_data.traversal())
+                ),
+        )
 
         self.qbx_order = qbx_order
         self.geo_data = geo_data
@@ -278,7 +296,7 @@ QBXFMMGeometryData.non_qbx_box_target_lists`),
                     src_box_starts=ssn.starts,
                     src_box_lists=ssn.lists,
 
-                    src_rscale=level_to_rscale(self.tree, isrc_level),
+                    src_rscale=level_to_rscale(self.tree, isrc_level, self.level_orders[isrc_level]),
 
                     wait_for=wait_for,
 
@@ -327,7 +345,7 @@ QBXFMMGeometryData.non_qbx_box_target_lists`),
                     expansions=target_locals_view,
                     qbx_expansions=qbx_expansions,
 
-                    src_rscale=level_to_rscale(self.tree, isrc_level),
+                    src_rscale=level_to_rscale(self.tree, isrc_level, self.level_orders[isrc_level]),
 
                     wait_for=wait_for,
 
@@ -381,6 +399,33 @@ QBXFMMGeometryData.non_qbx_box_target_lists`),
         return (self.full_output_zeros(), SumpyTimingFuture(self.queue, events=()))
 
     # }}}
+
+
+class QBXExpansionWithFFTWrangler(QBXExpansionWrangler,
+        SumpyExpansionWithFFTWrangler):
+
+    def __init__(self, code_container, queue, geo_data, dtype,
+            qbx_order, fmm_level_to_order,
+            source_extra_kwargs, kernel_extra_kwargs,
+            _use_target_specific_qbx=None):
+        if _use_target_specific_qbx:
+            raise ValueError("TSQBX is not implemented in sumpy")
+
+        from sumpy.fmm import SumpyTranslationClassesData
+
+        SumpyExpansionWithFFTWrangler.__init__(self,
+                code_container, queue, geo_data.tree(),
+                dtype, fmm_level_to_order, source_extra_kwargs,
+                kernel_extra_kwargs,
+                translation_classes_data=(
+                    SumpyTranslationClassesData(queue, geo_data.traversal())
+                ),
+        )
+
+        self.qbx_order = qbx_order
+        self.geo_data = geo_data
+        self.using_tsqbx = False
+
 
 # }}}
 
