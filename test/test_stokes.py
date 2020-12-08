@@ -39,12 +39,13 @@ from pytential import bind, sym, norm  # noqa
 from pytential import GeometryCollection
 from pytential.solve import gmres
 import logging
+import pytest
 
 
 def run_exterior_stokes_2d(ctx_factory, nelements,
         mesh_order=4, target_order=4, qbx_order=4,
         fmm_order=10,
-        mu=1, circle_rad=1.5, visualize=False):
+        mu=1, circle_rad=1.5, visualize=False, use_biharmonic=False):
 
     # This program tests an exterior Stokes flow in 2D using the
     # compound representation given in Hsiao & Kress,
@@ -133,8 +134,8 @@ def run_exterior_stokes_2d(ctx_factory, nelements,
     # +1 for exterior Dirichlet
     loc_sign = 1
 
-    stresslet_obj = StressletWrapper(dim=2)
-    stokeslet_obj = StokesletWrapper(dim=2)
+    stresslet_obj = StressletWrapper(dim=2, use_biharmonic=use_biharmonic)
+    stokeslet_obj = StokesletWrapper(dim=2, use_biharmonic=use_biharmonic)
     bdry_op_sym = (
             -loc_sign * 0.5 * sigma_sym
             - stresslet_obj.apply(sigma_sym, nvec_sym, mu_sym,
@@ -300,16 +301,22 @@ def run_exterior_stokes_2d(ctx_factory, nelements,
     return h_max, l2_err
 
 
-def test_exterior_stokes_2d(ctx_factory, qbx_order=3):
+@pytest.mark.parametrize("use_biharmonic", [True, False])
+def test_exterior_stokes_2d(ctx_factory, use_biharmonic, qbx_order=4):
     from pytools.convergence import EOCRecorder
     eoc_rec = EOCRecorder()
 
     for nelements in [20, 50]:
-        h_max, l2_err = run_exterior_stokes_2d(ctx_factory, nelements)
+        h_max, l2_err = run_exterior_stokes_2d(ctx_factory, nelements,
+            qbx_order=qbx_order, use_biharmonic=use_biharmonic)
         eoc_rec.add_data_point(h_max, l2_err)
 
     print(eoc_rec)
-    assert eoc_rec.order_estimate() >= qbx_order - 1
+    if use_biharmonic:
+        # 3 is because of the 3 derivatives in the stresslet
+        assert eoc_rec.order_estimate() >= qbx_order - 3
+    else:
+        assert eoc_rec.order_estimate() >= qbx_order
 
 
 # You can test individual routines by typing
