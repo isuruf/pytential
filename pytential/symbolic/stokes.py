@@ -105,7 +105,7 @@ class StokesletWrapper(StokesletWrapperMixin):
        for the same kernel in a different ordering.
     """
 
-    def __init__(self, dim=None, use_biharmonic=True):
+    def __init__(self, dim=None, use_biharmonic=False):
         self.use_biharmonic = use_biharmonic
         self.dim = dim
         if not (dim == 3 or dim == 2):
@@ -271,7 +271,7 @@ class StressletWrapper(StokesletWrapperMixin):
 
     """
 
-    def __init__(self, dim=None, use_biharmonic=True):
+    def __init__(self, dim=None, use_biharmonic=False):
         self.use_biharmonic = use_biharmonic
         self.dim = dim
         if not (dim == 3 or dim == 2):
