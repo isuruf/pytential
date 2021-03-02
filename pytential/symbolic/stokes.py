@@ -67,15 +67,14 @@ class StokesletWrapperMixin:
             for deriv_dir in deriv_dirs:
                 knl = AxisTargetDerivative(deriv_dir, knl)
 
-            res = sym.int_g_vec(knl, density,
+            return sym.int_g_vec(knl, density,
                     qbx_forced_limit=qbx_forced_limit)
-            return res
 
         deriv_relation = self.deriv_relation_dict[idx]
-        from pytential.symbolic.primitives import as_dofdesc, DEFAULT_SOURCE
         const = deriv_relation[0]
-        const *= sym.integral(self.dim, self.dim-1, density,
-                              dofdesc=as_dofdesc(DEFAULT_SOURCE))
+
+        dofdesc = sym.DOFDescriptor(None, discr_stage=sym.QBX_SOURCE_STAGE1)
+        const *= sym.integral(self.dim, self.dim - 1, density, dofdesc=dofdesc)
 
         result = const
         for mi, coeff in deriv_relation[1]:
@@ -461,7 +460,7 @@ class StokesOperator:
     .. automethod:: pressure
     """
 
-    def __init__(self, ambient_dim, side):
+    def __init__(self, ambient_dim, side, *, use_biharmonic=False):
         """
         :arg ambient_dim: dimension of the ambient space.
         :arg side: :math:`+1` for exterior or :math:`-1` for interior.
@@ -473,8 +472,10 @@ class StokesOperator:
         self.ambient_dim = ambient_dim
         self.side = side
 
-        self.stresslet = StressletWrapper(dim=self.ambient_dim)
-        self.stokeslet = StokesletWrapper(dim=self.ambient_dim)
+        self.stresslet = StressletWrapper(dim=self.ambient_dim,
+                use_biharmonic=use_biharmonic)
+        self.stokeslet = StokesletWrapper(dim=self.ambient_dim,
+                use_biharmonic=use_biharmonic)
 
     @property
     def dim(self):
@@ -530,7 +531,7 @@ class HsiaoKressExteriorStokesOperator(StokesOperator):
     .. automethod:: __init__
     """
 
-    def __init__(self, *, omega, alpha=None, eta=None):
+    def __init__(self, *, omega, alpha=None, eta=None, use_biharmonic=False):
         r"""
         :arg omega: farfield behaviour of the velocity field, as defined
             by :math:`A` in [HsiaoKress1985]_ Equation 2.3.
@@ -538,7 +539,7 @@ class HsiaoKressExteriorStokesOperator(StokesOperator):
         :arg eta: real parameter :math:`\eta > 0`. Choosing this parameter well
             can have a non-trivial effect on the conditioning.
         """
-        super().__init__(ambient_dim=2, side=+1)
+        super().__init__(ambient_dim=2, side=+1, use_biharmonic=use_biharmonic)
 
         # NOTE: in [hsiao-kress], there is an analysis on a circle, which
         # recommends values in
@@ -557,7 +558,8 @@ class HsiaoKressExteriorStokesOperator(StokesOperator):
         self.eta = eta
 
     def _farfield(self, mu, qbx_forced_limit):
-        length = sym.integral(self.ambient_dim, self.dim, 1)
+        dd = sym.DOFDescriptor(None, discr_stage=sym.QBX_SOURCE_STAGE1)
+        length = sym.integral(self.ambient_dim, self.dim, 1, dofdesc=dd)
         return self.stokeslet.apply(
                 -self.omega / length,
                 mu,
@@ -574,7 +576,9 @@ class HsiaoKressExteriorStokesOperator(StokesOperator):
         dd = sym.DOFDescriptor(None, discr_stage=sym.QBX_SOURCE_STAGE1)
 
         int_sigma = sym.integral(self.ambient_dim, self.dim, sigma, dofdesc=dd)
-        meanless_sigma = sym.cse(sigma - sym.mean(self.ambient_dim, self.dim, sigma))
+        meanless_sigma = sym.cse(
+                sigma - sym.mean(self.ambient_dim, self.dim, sigma, dofdesc=dd)
+                )
 
         op_k = self.stresslet.apply(sigma, normal, mu,
                 qbx_forced_limit=qbx_forced_limit)
@@ -618,13 +622,13 @@ class HebekerExteriorStokesOperator(StokesOperator):
     .. automethod:: __init__
     """
 
-    def __init__(self, *, eta=None):
+    def __init__(self, *, eta=None, use_biharmonic=False):
         r"""
         :arg eta: a parameter :math:`\eta > 0`. Choosing this parameter well
             can have a non-trivial effect on the conditioning of the operator.
         """
 
-        super().__init__(ambient_dim=3, side=+1)
+        super().__init__(ambient_dim=3, side=+1, use_biharmonic=use_biharmonic)
 
         # NOTE: eta is chosen here based on H. 1986 Figure 1, which is
         # based on solving on the unit sphere

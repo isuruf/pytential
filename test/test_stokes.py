@@ -39,23 +39,31 @@ from pyopencl.tools import (  # noqa
         as pytest_generate_tests)
 
 import logging
+logger = logging.getLogger(__name__)
 
 
 # {{{ test_exterior_stokes
 
 def run_exterior_stokes(ctx_factory, *,
         ambient_dim, target_order, qbx_order, resolution,
-        fmm_order=False,    # FIXME: FMM is slower than direct evaluation
+        fmm_order=None,
         source_ovsmp=None,
         radius=1.5,
         mu=1.0,
         visualize=False,
 
+        _use_biharmonic=False,
         _target_association_tolerance=0.05,
         _expansions_in_tree_have_extent=True):
     cl_ctx = cl.create_some_context()
     queue = cl.CommandQueue(cl_ctx)
     actx = PyOpenCLArrayContext(queue)
+
+    if _use_biharmonic:
+        fmm_order = qbx_order + 3
+    else:
+        # FIXME: FMM is slower than direct evaluation
+        fmm_order = False
 
     # {{{ geometry
 
@@ -129,10 +137,12 @@ def run_exterior_stokes(ctx_factory, *,
     if ambient_dim == 2:
         from pytential.symbolic.stokes import HsiaoKressExteriorStokesOperator
         sym_omega = sym.make_sym_vector("omega", ambient_dim)
-        op = HsiaoKressExteriorStokesOperator(omega=sym_omega)
+        op = HsiaoKressExteriorStokesOperator(
+                omega=sym_omega,
+                use_biharmonic=_use_biharmonic)
     elif ambient_dim == 3:
         from pytential.symbolic.stokes import HebekerExteriorStokesOperator
-        op = HebekerExteriorStokesOperator()
+        op = HebekerExteriorStokesOperator(use_biharmonic=_use_biharmonic)
     else:
         assert False
 
@@ -144,7 +154,11 @@ def run_exterior_stokes(ctx_factory, *,
 
     sym_velocity = op.velocity(sym_sigma, normal=sym_normal, mu=sym_mu)
 
-    sym_source_pot = op.stokeslet.apply(sym_sigma, sym_mu, qbx_forced_limit=None)
+    # FIXME: when use_biharmonic=True, there's an integral in `get_int_g` so
+    # we can't use the resulting operator for P2P evaluation here?
+    from pytential.symbolic.stokes import StokesletWrapper
+    stokeslet = StokesletWrapper(dim=ambient_dim, use_biharmonic=False)
+    sym_source_pot = stokeslet.apply(sym_sigma, sym_mu, qbx_forced_limit=None)
 
     # }}}
 
@@ -245,40 +259,50 @@ def run_exterior_stokes(ctx_factory, *,
     2,
     pytest.param(3, marks=pytest.mark.slowtest)
     ])
-def test_exterior_stokes(ctx_factory, ambient_dim, visualize=False):
+@pytest.mark.parametrize("use_biharmonic", [True, False])
+def test_exterior_stokes(ctx_factory, ambient_dim, use_biharmonic,
+        visualize=False):
     if visualize:
         logging.basicConfig(level=logging.INFO)
 
     from pytools.convergence import EOCRecorder
     eoc = EOCRecorder()
 
-    target_order = 3
-    qbx_order = 3
+    target_order = 4
+    qbx_order = 4
 
-    print(ambient_dim)
     if ambient_dim == 2:
-        resolutions = [20, 35, 50]
+        resolutions = [20, 35, 50, 65, 80]
     elif ambient_dim == 3:
         resolutions = [0, 1, 2]
     else:
         raise ValueError(f"unsupported dimension: {ambient_dim}")
 
+    import time
     for resolution in resolutions:
+        t_start = time.time()
         h_max, err = run_exterior_stokes(ctx_factory,
                 ambient_dim=ambient_dim,
                 target_order=target_order,
                 qbx_order=qbx_order,
                 resolution=resolution,
-                visualize=visualize)
+                visualize=visualize,
+                _use_biharmonic=use_biharmonic)
+        t_end = time.time()
 
         eoc.add_data_point(h_max, err)
+        print("resolution {:4d} error {:.5e} time {:.2f}s".format(
+            resolution, err, t_end - t_start))
 
     print(eoc)
 
     # This convergence data is not as clean as it could be. See
     # https://github.com/inducer/pytential/pull/32
     # for some discussion.
-    assert eoc.order_estimate() > target_order - 0.5
+    if use_biharmonic:
+        assert eoc.order_estimate() > qbx_order - 3
+    else:
+        assert eoc.order_estimate() > qbx_order - 0.5
 
 # }}}
 
