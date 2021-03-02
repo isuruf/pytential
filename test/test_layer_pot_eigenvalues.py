@@ -94,7 +94,7 @@ def test_ellipse_eigenvalues(ctx_factory, ellipse_aspect, mode_nr, qbx_order,
     # [1] G. J. Rodin and O. Steinbach, "Boundary Element Preconditioners
     # for Problems Defined on Slender Domains", SIAM Journal on Scientific
     # Computing, Vol. 24, No. 4, pg. 1450, 2003.
-    # http://dx.doi.org/10.1137/S1064827500372067
+    # https://dx.doi.org/10.1137/S1064827500372067
 
     for nelements in nelements_values:
         mesh = make_curve_mesh(partial(ellipse, ellipse_aspect),
@@ -124,7 +124,7 @@ def test_ellipse_eigenvalues(ctx_factory, ellipse_aspect, mode_nr, qbx_order,
             centers = bind(places,
                     sym.expansion_centers(qbx.ambient_dim, +1))(actx)
             normals = bind(places,
-                    sym.normal(qbx.ambient_dim))(actx).as_vector(np.object)
+                    sym.normal(qbx.ambient_dim))(actx).as_vector(object)
 
             nodes_h = np.array([actx.to_numpy(axis) for axis in flatten(nodes)])
             centers_h = np.array([actx.to_numpy(axis) for axis in flatten(centers)])
@@ -307,7 +307,7 @@ def test_sphere_eigenvalues(ctx_factory, mode_m, mode_n, qbx_order,
         density_discr = places.get_discretization(places.auto_source.geometry)
         nodes = thaw(actx, density_discr.nodes())
         r = actx.np.sqrt(nodes[0]*nodes[0] + nodes[1]*nodes[1] + nodes[2]*nodes[2])
-        phi = actx.np.acos(nodes[2]/r)
+        phi = actx.np.arccos(nodes[2]/r)
         theta = actx.np.arctan2(nodes[0], nodes[1])
 
         ymn = unflatten(actx, density_discr,

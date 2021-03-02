@@ -48,7 +48,8 @@ class P2QBXLFromCSR(P2EBase):
                 [
                     lp.GlobalArg("sources", None, shape=(self.dim, "nsources"),
                         dim_tags="sep,c"),
-                    lp.GlobalArg("strengths", None, shape="nsources"),
+                    lp.GlobalArg("strengths", None, dim_tags="sep,c",
+                        shape="strength_count, nsources"),
                     lp.GlobalArg("qbx_center_to_target_box",
                         None, shape=None),
                     lp.GlobalArg("source_box_starts,source_box_lists",
@@ -63,7 +64,9 @@ class P2QBXLFromCSR(P2EBase):
                     lp.ValueArg("ncenters", np.int32),
                     lp.ValueArg("nsources", np.int32),
                     "..."
-                ] + gather_loopy_source_arguments([self.expansion]))
+                ] + gather_loopy_source_arguments(
+                        self.source_kernels + (self.expansion,))
+        )
 
         loopy_knl = lp.make_kernel(
                 [
@@ -76,7 +79,7 @@ class P2QBXLFromCSR(P2EBase):
                 for itgt_center
                     <> tgt_icenter = global_qbx_centers[itgt_center]
 
-                    <> center[idim] = qbx_centers[idim, tgt_icenter] {dup=idim}
+                    <> center[idim] = qbx_centers[idim, tgt_icenter]
                     <> rscale = qbx_expansion_radii[tgt_icenter]
 
                     <> itgt_box = qbx_center_to_target_box[tgt_icenter]
@@ -92,28 +95,28 @@ class P2QBXLFromCSR(P2EBase):
                         for isrc
                             <> a[idim] = center[idim] - sources[idim, isrc] \
                                     {dup=idim}
-                            <> strength = strengths[isrc]
-
                             """] + self.get_loopy_instructions() + ["""
                         end
                     end
 
-                    """] + ["""
+                    """] + [f"""
                     qbx_expansions[tgt_icenter, {i}] = \
-                            simul_reduce(sum, (isrc_box, isrc), strength*coeff{i}) \
+                            simul_reduce(sum, (isrc_box, isrc), \
+                                         {self.get_result_expr(i)}) \
                             {{id_prefix=write_expn}}
-                    """.format(i=i)
-                        for i in range(ncoeffs)] + ["""
+                    """ for i in range(ncoeffs)] + ["""
 
                 end
                 """],
                 arguments,
                 name=self.name, assumptions="ntgt_centers>=1",
                 silenced_warnings="write_race(write_expn*)",
-                fixed_parameters=dict(dim=self.dim),
+                fixed_parameters=dict(dim=self.dim,
+                    strength_count=self.strength_count),
                 lang_version=MOST_RECENT_LANGUAGE_VERSION)
 
-        loopy_knl = self.expansion.prepare_loopy_kernel(loopy_knl)
+        for knl in self.source_kernels:
+            loopy_knl = knl.prepare_loopy_kernel(loopy_knl)
         loopy_knl = lp.tag_inames(loopy_knl, "idim*:unr")
 
         return loopy_knl
@@ -215,8 +218,8 @@ class M2QBXL(E2EBase):
                 fixed_parameters=dict(dim=self.dim),
                 lang_version=MOST_RECENT_LANGUAGE_VERSION)
 
-        for expn in [self.src_expansion, self.tgt_expansion]:
-            loopy_knl = expn.prepare_loopy_kernel(loopy_knl)
+        for knl in [self.src_expansion.kernel, self.tgt_expansion.kernel]:
+            loopy_knl = knl.prepare_loopy_kernel(loopy_knl)
 
         loopy_knl = lp.tag_inames(loopy_knl, "idim*:unr")
 
@@ -317,8 +320,8 @@ class L2QBXL(E2EBase):
                 fixed_parameters=dict(dim=self.dim, nchildren=2**self.dim),
                 lang_version=MOST_RECENT_LANGUAGE_VERSION)
 
-        for expn in [self.src_expansion, self.tgt_expansion]:
-            loopy_knl = expn.prepare_loopy_kernel(loopy_knl)
+        for knl in [self.src_expansion.kernel, self.tgt_expansion.kernel]:
+            loopy_knl = knl.prepare_loopy_kernel(loopy_knl)
 
         loopy_knl = lp.tag_inames(loopy_knl, "idim*:unr")
 
@@ -416,7 +419,8 @@ class QBXL2P(E2PBase):
                 lang_version=MOST_RECENT_LANGUAGE_VERSION)
 
         loopy_knl = lp.tag_inames(loopy_knl, "idim*:unr")
-        loopy_knl = self.expansion.prepare_loopy_kernel(loopy_knl)
+        for knl in self.kernels:
+            loopy_knl = knl.prepare_loopy_kernel(loopy_knl)
 
         return loopy_knl
 

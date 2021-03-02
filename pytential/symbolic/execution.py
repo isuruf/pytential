@@ -176,9 +176,10 @@ class EvaluationMapperBase(PymbolicEvaluationMapper):
             return _reduce(node_knl(),
                     discr.empty(self.array_context, dtype=dtype))
         elif granularity is sym.GRANULARITY_ELEMENT:
-            result = DOFArray.from_list(self.array_context, [
-                    self.array_context.empty((grp.nelements, 1), dtype=dtype)
-                    for grp in discr.groups])
+            result = DOFArray(self.array_context, tuple([
+                self.array_context.empty((grp.nelements, 1), dtype=dtype)
+                for grp in discr.groups
+                ]))
             return _reduce(element_knl(), result)
         else:
             raise ValueError(f"unsupported granularity: {granularity}")
@@ -204,7 +205,12 @@ class EvaluationMapperBase(PymbolicEvaluationMapper):
     def map_node_coordinate_component(self, expr):
         discr = self.places.get_discretization(
                 expr.dofdesc.geometry, expr.dofdesc.discr_stage)
-        return thaw(self.array_context, discr.nodes()[expr.ambient_axis])
+
+        x = discr.nodes()[expr.ambient_axis]
+        if isinstance(x, DOFArray):
+            return thaw(self.array_context, x)
+        else:
+            return self.array_context.thaw(x)
 
     def map_num_reference_derivative(self, expr):
         discr = self.places.get_discretization(
@@ -243,7 +249,7 @@ class EvaluationMapperBase(PymbolicEvaluationMapper):
     def map_interpolation(self, expr):
         operand = self.rec(expr.operand)
 
-        if isinstance(operand, (cl.array.Array, list, np.ndarray)):
+        if isinstance(operand, (cl.array.Array, list, np.ndarray, DOFArray)):
             conn = self.places.get_connection(expr.from_dd, expr.to_dd)
             return conn(operand)
         elif isinstance(operand, (int, float, complex, np.number)):
@@ -300,11 +306,12 @@ class EvaluationMapperBase(PymbolicEvaluationMapper):
     # }}}
 
     def map_call(self, expr):
-        from pytential.symbolic.primitives import EvalMapperFunction, CLMathFunction
+        from pytential.symbolic.primitives import (
+                EvalMapperFunction, NumpyMathFunction)
 
         if isinstance(expr.function, EvalMapperFunction):
             return getattr(self, "apply_"+expr.function.name)(expr.parameters)
-        elif isinstance(expr.function, CLMathFunction):
+        elif isinstance(expr.function, NumpyMathFunction):
             args = [self.rec(arg) for arg in expr.parameters]
             from numbers import Number
             if all(isinstance(arg, Number) for arg in args):
@@ -388,7 +395,7 @@ class CostModelMapper(EvaluationMapperBase):
     def exec_compute_potential_insn(
             self, actx: PyOpenCLArrayContext, insn, bound_expr, evaluate):
         source = bound_expr.places.get_geometry(insn.source.geometry)
-        knls = frozenset(knl for knl in insn.kernels)
+        knls = frozenset(knl for knl in insn.target_kernels)
 
         if (isinstance(self.kernel_to_calibration_params, str)
                 and self.kernel_to_calibration_params == "constant_one"):
@@ -495,6 +502,9 @@ class MatVecOp:
             host = False
             assert x.shape == (self.total_dofs,)
         elif isinstance(x, np.ndarray) and x.dtype.char == "O":
+            flat = False
+            host = False
+        elif isinstance(x, DOFArray):
             flat = False
             host = False
         else:
@@ -1153,7 +1163,7 @@ def build_matrix(actx, places, exprs, input_exprs, domains=None,
     from pytential.symbolic.matrix import MatrixBuilder, is_zero
     nblock_rows = len(exprs)
     nblock_columns = len(input_exprs)
-    blocks = np.zeros((nblock_rows, nblock_columns), dtype=np.object)
+    blocks = np.zeros((nblock_rows, nblock_columns), dtype=object)
 
     dtypes = []
     for ibcol in range(nblock_columns):

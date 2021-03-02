@@ -25,7 +25,7 @@ THE SOFTWARE.
 
 from meshmode.array_context import PyOpenCLArrayContext  # noqa
 from meshmode.dof_array import DOFArray
-import numpy as np
+import numpy as np  # noqa: F401
 from pytools import memoize_in
 
 import loopy as lp
@@ -117,7 +117,7 @@ class CenterGranularityConnection(GranularityConnection):
                     prg(), src1=src1, src2=src2, dst=result,
                     nelements=grp.nelements, nunit_dofs=grp.nunit_dofs)
             results.append(result)
-        return DOFArray.from_list(self.array_context, results)
+        return DOFArray(self.array_context, tuple(results))
 
     def __call__(self, arys):
         r"""
@@ -133,7 +133,7 @@ class CenterGranularityConnection(GranularityConnection):
             A single array is simply interleaved with itself.
 
         """
-        if isinstance(arys, np.ndarray):
+        if isinstance(arys, DOFArray):
             arys = (arys, arys)
         if isinstance(arys, (list, tuple)):
             assert len(arys) == 2

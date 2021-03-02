@@ -45,13 +45,13 @@ class P2QBXLInfo(Record):
 class QBXFMMLibExpansionWranglerCodeContainer:
     def __init__(self, cl_context,
             multipole_expansion_factory, local_expansion_factory,
-            qbx_local_expansion_factory, out_kernels):
+            qbx_local_expansion_factory, target_kernels):
         self.cl_context = cl_context
         self.multipole_expansion_factory = multipole_expansion_factory
         self.local_expansion_factory = local_expansion_factory
         self.qbx_local_expansion_factory = qbx_local_expansion_factory
 
-        self.out_kernels = out_kernels
+        self.target_kernels = target_kernels
 
     def get_wrangler(self, queue, geo_data, dtype,
             qbx_order, fmm_level_to_order,
@@ -88,7 +88,7 @@ class QBXFMMLibExpansionWrangler(FMMLibExpansionWrangler):
         self.geo_data = geo_data
         self.qbx_order = qbx_order
 
-        # {{{ digest out_kernels
+        # {{{ digest target_kernels
 
         ifgrad = False
         outputs = []
@@ -100,7 +100,7 @@ class QBXFMMLibExpansionWrangler(FMMLibExpansionWrangler):
                 # None means use by default if possible
                 or _use_target_specific_qbx is None)
 
-        for out_knl in self.code.out_kernels:
+        for out_knl in self.code.target_kernels:
             if not self.is_supported_helmknl_for_tsqbx(out_knl):
                 if _use_target_specific_qbx:
                     raise ValueError("not all kernels passed support TSQBX")
@@ -284,7 +284,8 @@ class QBXFMMLibExpansionWrangler(FMMLibExpansionWrangler):
 
     @log_process(logger)
     @return_timing_data
-    def form_global_qbx_locals(self, src_weights):
+    def form_global_qbx_locals(self, src_weight_vecs):
+        src_weights, = src_weight_vecs
         if self.using_tsqbx:
             return self.qbx_local_expansion_zeros()
 
@@ -472,7 +473,7 @@ class QBXFMMLibExpansionWrangler(FMMLibExpansionWrangler):
 
         nlevels = geo_data.tree().nlevels
 
-        box_to_rscale = np.empty(geo_data.tree().nboxes, dtype=np.float)
+        box_to_rscale = np.empty(geo_data.tree().nboxes, dtype=np.float64)
         for isrc_level in range(nlevels):
             lev_box_start, lev_box_stop = self.tree.level_start_box_nrs[
                     isrc_level:isrc_level+2]
@@ -578,7 +579,8 @@ class QBXFMMLibExpansionWrangler(FMMLibExpansionWrangler):
 
     @log_process(logger)
     @return_timing_data
-    def eval_target_specific_qbx_locals(self, src_weights):
+    def eval_target_specific_qbx_locals(self, src_weight_vecs):
+        src_weights, = src_weight_vecs
         if not self.using_tsqbx:
             return self.full_output_zeros()
 
@@ -596,9 +598,9 @@ class QBXFMMLibExpansionWrangler(FMMLibExpansionWrangler):
         ifgrad = self.ifgrad
 
         # Create temporary output arrays for potential / gradient.
-        pot = np.zeros(self.tree.ntargets, np.complex) if ifpot else None
+        pot = np.zeros(self.tree.ntargets, np.complex128) if ifpot else None
         grad = (
-                np.zeros((self.dim, self.tree.ntargets), np.complex)
+                np.zeros((self.dim, self.tree.ntargets), np.complex128)
                 if ifgrad else None)
 
         ts.eval_target_specific_qbx_locals(

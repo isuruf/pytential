@@ -16,20 +16,17 @@ This set of instructions is intended for 64-bit Linux and macOS computers.
     Everywhere else, just making sure you have the ``g++`` package should be
     enough.
 
-#.  Install your favorite variant of `miniconda <https://conda.io/miniconda.html>`_.
-    (Both Python 2 and 3 should work. In the absence of other constraints, prefer Python 3.)
+#.  Install your favorite variant of `miniforge <https://github.com/conda-forge/miniforge>`_.
 
-#.  ``export CONDA=/WHERE/YOU/INSTALLED/miniconda3``
+#.  ``export CONDA=/WHERE/YOU/INSTALLED/miniforge3``
 
     If you accepted the default location, this should work:
 
-    ``export CONDA=$HOME/miniconda3``
+    ``export CONDA=$HOME/miniforge3``
 
 #.  ``$CONDA/bin/conda create -n inteq``
 
 #.  ``source $CONDA/bin/activate inteq``
-
-#.  ``conda config --add channels conda-forge``
 
 Then, on Linux:
 
@@ -37,29 +34,24 @@ Then, on Linux:
 
 #.  Type the following command::
 
-        hash -r; for i in pymbolic cgen genpy gmsh_interop modepy pyvisfile loopy boxtree sumpy meshmode pytential; do python -m pip install git+https://github.com/inducer/$i; done
+        hash -r; for i in pymbolic cgen genpy gmsh_interop modepy pyvisfile loopy boxtree sumpy meshmode pytential; do python -m pip install --editable "git+https://github.com/inducer/$i#egg=$i"; done
 
 And on macOS:
 
-#.  ``conda install openmp clangdev cython git pip pocl islpy pyopencl sympy pyfmmlib pytest``
-
-#.  Ensure the Conda version of clang finds the system headers.  For Catalina
-    (10.15), you should set (`source <https://stackoverflow.com/a/60002595>`_)::
-
-      export SDKROOT=$(xcrun --sdk macosx --show-sdk-path)
-
-    Whereas for Mojave (10.14), you may need to follow `these steps
-    <https://stackoverflow.com/a/52530212>`_.
+#.  ``conda install compilers cython git pip pocl islpy pyopencl sympy pyfmmlib pytest``
 
 #.  Type the following command::
 
-        hash -r; for i in pymbolic cgen genpy gmsh_interop modepy pyvisfile loopy boxtree sumpy meshmode pytential;do CC=clang LDFLAGS="-mlinker-version=519" python -m pip install git+https://github.com/inducer/$i; done
+        hash -r; for i in pymbolic cgen genpy gmsh_interop modepy pyvisfile loopy boxtree sumpy meshmode pytential;do CC=clang python -m pip install --editable "git+https://github.com/inducer/$i#egg=$i"; done
 
-    (The `LDFLAGS` argument is due to a `bug <https://stackoverflow.com/q/60934005>`_.)
+.. note::
+
+    In each case, you may leave out the ``--editable`` flag if you would not like
+    a checkout of the source code.
 
 Next time you want to use :mod:`pytential`, just run the following command::
 
-    source /WHERE/YOU/INSTALLED/miniconda3/bin/activate inteq
+    source /WHERE/YOU/INSTALLED/miniforge3/bin/activate inteq
 
 You may also like to add this to a startup file (like :file:`$HOME/.bashrc`) or create an alias for it.
 
@@ -154,7 +146,7 @@ Frequently Asked Questions
 ==========================
 
 The FAQ is maintained collaboratively on the
-`Wiki FAQ page <http://wiki.tiker.net/Pytential/FrequentlyAskedQuestions>`_.
+`Wiki FAQ page <https://wiki.tiker.net/Pytential/FrequentlyAskedQuestions>`_.
 
 Acknowledgments
 ===============
